@@ -1,0 +1,1189 @@
+---
+title: 'Data Science Capstone: Week 2 Milestone Report'
+author: "Carlos Schuler"
+date: "9/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE, autodep=TRUE)
+```
+
+## Overall Project Objective
+
+The objective of this Capstone Project is to develop a "text auto-complete" predictive model. This model will be based upon an unstructured Corpus (ie. collection of written text)  of the English language (eg. "the data"), and will ultimately be implemented as a web-based "Shiny app".
+
+### Organization of this Report
+
+The body of this report contains a narrative, observations and major features of the data set, as well as plans for creating the prediction algorithm and Shiny app. For continuity and ease of reading, the majoriry of the code chunks are placed in the Appendix.
+
+# The Data
+
+Many data sources could be employed to build this "auto-complete" statistical language model, for example: digitized books, newspapers, stories, etc.
+
+For this project, the Corpus used for the predictive algorithm is obtained from [this location](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip), via the code included in the Appendix. Executing this code results in the following folder structure:
+
+**textSource**  
+--**de_DE**  
+----de_DE.blogs.txt  
+----de_DE.news.txt  
+----de_DE.twitter.txt  
+--**en_US**  
+----en_US.blogs.txt  
+----en_US.news.txt  
+----en_US.twitter.txt  
+--**fi_FI**  
+----fi_FI.blogs.txt  
+----fi_FI.news.txt  
+----fi_FI.twitter.txt  
+--**ru_RU**  
+----ru_RU.blogs.txt  
+----ru_RU.news.txt  
+----ru_RU.twitter.txt  
+
+Each of the four folders under **textSource** (one for each language/location) contains three files with text collected from publicly available sources by a web crawler.  The methodology for collection and filtering is documented [here](https://www.coursera.org/learn/data-science-project/supplement/4phKX/about-the-corpora).
+
+This project focuses on the *en_US* (English/United States) Corpus. Although the crawler checks for language, it is not perfect: it *mainly* gets texts consisting of the desired language, but it will occasionally include foreign text in the English Corpus.  As an illustration of the data, the first two and the last two lines of each file in the English Corpus are reproduced below:
+
+**en_US.twitter.txt**:
+
+> "How are you? Btw thanks for the RT. You gonna be in DC anytime soon? Love to see you. Been way, way too long."  
+> "When you meet someone special... you'll know. Your heart will beat more rapidly and you'll smile for no reason."
+
+> "It is #RHONJ time!!"                                                                                           
+> "The key to keeping your woman happy= attention, affection, treat her like a queen and sex her like a pornstar!"
+
+**en_US.blogs.txt**: 
+
+> "In the years thereafter, most of the Oil fields and platforms were named after pagan gods."  
+> "We love you Mr. Brown."  
+
+> "(5) What's the barrier to entry and why is the business sustainable?"  
+> "In response to an over-whelming number of comments we sat down and created a list of do (s) and dont (s)  these recommendations are easy to follow and except for - adding some herbs to your rinse . So lets get begin"  
+
+**en_US.news.txt**:
+
+> "He wasn't home alone, apparently."  
+> "The St. Louis plant had to close. It would die of old age. Workers had been making cars there since the onset of mass automotive production in the 1920s."  
+
+> "That starts this Sunday at Chivas. The Goats aren't a great team, but they just beat one (a 1-0 win over Salt Lake at Rio Tinto). They also have the one player who can rival Roger Espinoza as \"The Best Guy in MLS That No One Talks About Because He Doesn't Play in New York, LA or the Pacific Northwest\" in goalkeeper Dan Kennedy. These will be tough points."  
+> "The only outwardly religious adornment was a billboard-sized banner with an image of Our Lady of Charity, patron saint of Cuba, hanging on the side of the National Library."  
+
+As a preliminary analysis, here are some basic high-level statistics for this data (obtained using the Unix command *wc*):
+
+| File Name                              | Lines     | Words      | Bytes       |
+|----------------------------------------|-----------|------------|-------------|
+| **textSource/en_US/en_US.twitter.txt** | 2,360,148 | 30,374,206 | 167,105,338 |
+| **textSource/en_US/en_US.blogs.txt**   | 899,288   | 37,334,690 | 210,160,014 |
+| **textSource/en_US/en_US.news.txt**    | 1,010,242 | 34,372,720 | 205,811,889 |
+
+When loaded in memory, R reports (using the function *object.size()*) the following resource usage: 
+
+* **en_US.twitter.txt**: 318.5 Mb  
+* **en_US.blogs.txt**: 253.1 Mb  
+* **en_US.news.txt**: 256.4 Mb
+
+# Sampling
+
+
+
+The central goal of the most the commonly used language model: the *n-gram model*, is to determine the probability of a word given the previous *n* words. This probability model will be calculated from the text sample.  As in other machine learning applications, the data will be sampled to create: (a) A *training set* to train the model, and (b) A *testing set* to evaluate its performance. When combined, the data comprises 4,269,678 lines of text altogether. Of course, memory and time constraints limit the size of the samples that can be used for the *training* and *testing sets* in any prediction algorithm. Typical *training sets* used in this project range from 30,000 to 120,000 randomly sampled lines; with the *testing set* set at 20% of the size of the *training set*.  In addition *toy corpora* consisting of only a few lines of text are used occasionally to verify that the algorithms implemented work correctly.
+
+The code to perform the sampling tasks is presented in the Appendix. In this project, sampling is performed across all three data sources: Twitter, Blogs and News, in order to obtain a broader spectrum of speech patterns, from conversational to formal, captured in the statistical model.  Both the *training set* and the *testing set* are written to a single file each in separate folders for latter retrieval.
+
+## Data Clean-up
+
+Before performing the statistical analysis, the data needs to be "cleaned", to handle punctuation, capitalization, eliminate numbers, deal with typos, etc. To achieve this, the data will loaded into memory and pre-processed using functions from the *tm* package, documented [here](https://www.jstatsoft.org/index.php/jss/article/view/v025i05/v25i05.pdf).
+
+The code presented in the Appendix performs the following tasks:
+
+* Loads the *Training Set* into memory
+* Performs the following clean-up actions:
+    * Convert all characters to lower case
+    * Remove profanity, using a "profanity list" obtained from a web source
+    * Expand some common abbreviations
+    * Eliminate all non-ASCII characters
+    * Remove extraneous "single character words"
+    * Identify sentence boundaries ("Full stops")
+    * Remove URL's, emails, Twitter hashtags and @user tags
+    * Remove numbers
+    * Remove punctuation
+    * Eliminate extra space characters between words
+
+## Tokenization
+
+The function *ngrams()* from the R package *NLP* (documented [here](https://www.rdocumentation.org/packages/NLP/versions/0.2-0/topics/ngrams)) is used in this project to separate the Corpus into n-grams (ie. continuous word sequences of length *n*). In this projects, n-grams of lengths in the range 3 (tri-grams) to 5 (penta-grams) are explored.
+
+## Document Term Matrices
+
+A document-term matrix (DTM) is a  matrix that describes the frequency of terms that occur in a collection of documents. Because samples are taken across all three text sources into a single file, there is only "one document" in our particular situation. *DocumentTermMatrix()* is a useful function in this situation to quantify the frequency of n-grams in the Corpus. In this project, the *tm* package implementation will be used.  The function *buildDTM()*, listed in the Appendix, implements building the DTM from the Corpus using *DocumentTermMatrix()*.
+
+Two important control parameters for the *DocumentTermMatrix()* function are the "minimum term count" for an n-gram to be "counted", and the "minimum character word length". Both can be use to filter and clean-up the data. However, as English has at least one "one-character word" (that is, "a"), the latter needs to be set to the value "1". The "minimum term count" can, however, be effectively used to filter out mis-spelled words, foreign words and uncommon expressions, as they are less likely to appear repeatedly in the Corpus.
+
+## Bag of Words
+
+The initial data structure specific to this project is a "Bag of Words" - essentially a summary of terms, frequencies and cumulative frequencies. In this project, the bag of words is implemented as a list of data frames, each data frame corresponding to an *n* value - that is, a data frame for unigrams, another for bigrams, etc. Each of these data frames includes two columns: term counts and cumulative count, with the "terms" (n-grams) stored as the row names.) As will be shown later, the bag of words structure is transitional, and will expand into a more general "n-gram" count-lookup data frame structure. The function *buildBagOfWords()* presented in the Appendix takes the first step in creating the bag of words, by transferring information from the DTM and sorting the term list in frequency descending order.
+
+```{r showStasF, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(tm)
+library(stringr)
+library(slam)
+library(wordcloud)
+library(SemNetCleaner)
+
+#########
+readkey <- function() {
+        line <- readline(prompt="Press [enter] to continue")
+}
+
+#########
+getDataSet <- function() {
+        temp <- tempfile()
+        download.file("https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip",temp)
+        unzip(temp, exdir=getwd())
+        unlink(temp)
+        file.rename("final","textSource")
+}
+
+#########
+readTextFile <- function(filename, ...){
+        con <- file(filename, "r")
+        text <-readLines(con, encoding = "UTF-8", skipNul = TRUE, ...)
+        close(con)
+        return(iconv(text, "latin1", "ASCII", sub="")) # only ASCII characters, remove emoticons
+}
+
+#########
+writeTextFile <- function(text,filename) {
+        con <- file(filename, "w")
+        writeLines(text, con, sep="\n")
+        close(con)
+}
+
+#########
+getData <- function(sampleDirectory,sampleFile,nSamples,forceNew=FALSE) {
+        
+        nSamplesFile <- file.path(sampleDirectory,paste0("../",sampleFile,".nSamples.RData"))
+
+        
+        #Check if the sample file has been created
+        if(!dir.exists(sampleDirectory)) {
+                dir.create(sampleDirectory)
+        }
+        fullSampleFile <- file.path(sampleDirectory,sampleFile)
+        
+        sampleTestDirectory <- paste0(sampleDirectory,"TEST")
+        if(!dir.exists(sampleTestDirectory)) {
+                dir.create(sampleTestDirectory)
+        }
+        testSampleFile <- file.path(sampleTestDirectory,sampleFile)
+        
+        
+        if(file.exists(nSamplesFile)) {
+                load(nSamplesFile) #reads nSamplesOld
+        } else {
+                nSamplesOld <- 0
+        }
+        
+        if(forceNew || (nSamples != nSamplesOld)) {
+                if(file.exists(fullSampleFile)) file.remove(fullSampleFile)
+        }
+        
+        if(!file.exists(fullSampleFile)) {
+                print("Building new samples file")
+                
+                twitterFile <- "./textSource/en_US/en_US.twitter.txt"
+                blogsFile <- "./textSource/en_US/en_US.blogs.txt"
+                newsFile <- "./textSource/en_US/en_US.news.txt"
+                
+                # Lines, words, bytes
+                print("Lines, words, bytes:")
+                system(paste("wc",twitterFile))
+                system(paste("wc",blogsFile))
+                system(paste("wc",newsFile))
+                
+                # Read all the data in
+                
+                twitterText <- readTextFile(twitterFile,-1)
+                blogsText <- readTextFile(blogsFile,-1)
+                newsText <- readTextFile(newsFile,-1)
+                
+                print("=============Twitter head and tail:")
+                print(head(twitterText,n=2))
+                print(tail(twitterText,n=2))
+                
+                print("=============Blogs head and tail")
+                print(head(blogsText,n=2))
+                print(tail(blogsText,n=2))
+                
+                print("=============News head and tail")
+                print(head(newsText,n=2))
+                print(tail(newsText,n=2))
+                
+                print("Memory use:")
+                print(paste("Twiter text:",format(object.size(twitterText), units = "MB")))
+                print(paste("Blogs text",format(object.size(blogsText), units = "MB")))
+                print(paste("News text",format(object.size(newsText), units = "MB")))
+                
+                # Combine them
+                allText <- c(twitterText, blogsText, newsText)
+                rm(twitterText, blogsText, newsText)
+                print("Length of all text (lines):")
+                print(length(allText))
+                
+                # Sample
+                fullSampleNumber <- round(nSamples*1.2,0) # add 20% for the test set
+                workingText <- sample(allText, fullSampleNumber, replace=FALSE) 
+                rm(allText)
+                # Write it
+                writeTextFile(workingText[1:nSamples],fullSampleFile) # this is the training set
+                writeTextFile(workingText[(nSamples+1):fullSampleNumber],testSampleFile) # this is the test set
+                nSamplesOld <- nSamples
+                save(nSamplesOld, file = nSamplesFile)
+                readkey()
+        }
+}
+
+#########
+# Create the Corpus
+createCorpus <- function(nSamples, forceNew = FALSE) {
+        set.seed(1234)
+        sampleDirectory <- "./textSample"
+        sampleFile <- "textSample.txt"
+        
+        print("Creating Corpus")
+        getData(sampleDirectory,sampleFile, nSamples, forceNew = FALSE)
+        
+        # Reading the Corpus as a directory source appears to be more memory efficient than
+        # reading it as a vector of lines
+        myCorpus <- VCorpus(DirSource(sampleDirectory),
+                            readerControl=list(readPlain, language="en", load=TRUE))
+        return(myCorpus)
+}
+
+#########
+# Transform symbols/punctuations etc. into a space (adapted from: https://rpubs.com/elisb/EDA_nword)
+cleanStuff = function(x) {
+        x <- str_replace_all(x, fixed(" i'm "), " i am ")
+        x <- str_replace_all(x, fixed(" it's "), " it is ")
+        x <- str_replace_all(x, fixed(" can't "), " can not ")
+        x <- str_replace_all(x, fixed("n't "), " not ")
+        x <- str_replace_all(x, fixed(" dont "), " do not ")
+        x <- str_replace_all(x, fixed("'d "), " would ")
+        x <- str_replace_all(x, fixed("'ll "), " will ")
+        x <- str_replace_all(x, fixed("'re "), " are ")
+        x <- str_replace_all(x, fixed("'ve "), " have ")
+        x <- str_replace_all(x, fixed("ca not"), "can not")
+        x <- str_replace_all(x, fixed("pls"), "please")
+        x <- str_replace_all(x, fixed("'s"), " ")
+        x <- str_replace_all(x, fixed(" u "), "you")
+        x <- str_replace_all(x, "[^\x01-\x7F]", " ")  # Replace all non-ASCII characters
+        
+        return(x)
+}
+
+#########
+# Identify end of sentence periods with the character sntcfs
+# Adapted from https://regex101.com/r/lS5tT3/15
+identifyFullStops = function(x) {
+        x <- str_replace_all(x, "[!?.]+(?=$|\\s)", " sntcfs ")
+}
+
+#########
+# Replacee end of sentence tokens "sntcfs" with shorter token ">"
+nicerFullStops = function(x) {
+
+        #It would be great to figure out better way to do this ...
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, fixed("sntcfs"), " > ")
+}
+
+#########
+# Transform symbols/punctuations etc. into a space (borrowed from: https://rpubs.com/elisb/EDA_nword)
+cleanToSpace <- content_transformer(
+        function(x, pattern) {
+        return (str_replace_all(x, pattern, " "))
+                }
+        )
+
+#########
+# Cleanup the corpus to just "nice" words
+cleanupCorpus <- function(myCorpus) {
+        print("Cleaning ...")
+        # Read profanity list
+        profanityList <- suppressWarnings(readLines("https://gist.githubusercontent.com/ryanlewis/a37739d710ccdb4b406d/raw/3b70dd644cec678ddc43da88d30034add22897ef/google_twunter_lol"))
+        profanityList <- profanityList[order(str_length(profanityList),decreasing=TRUE)]
+        
+        #Cleanup. Don't remove stop words nor stem 
+        myCorpus <- myCorpus %>% 
+                tm_map(content_transformer(tolower)) %>% 
+                tm_map(removeWords, profanityList)  %>% 
+                tm_map(content_transformer(cleanStuff)) %>% 
+                tm_map(removeWords, c("b", "c", "d", "e",
+                                      "f", "g", "h", "j",
+                                      "k", "l", "m", "n", 
+                                      "o", "p", "q", "r", 
+                                      "s", "t", "u", "v", 
+                                      "w", "x", "y", "z", 
+                                      "rt","ya")) %>%      #remove some common abbreviations an random letters
+                tm_map(content_transformer(identifyFullStops)) %>%
+                tm_map(cleanToSpace, "(ftp|http|https|www)[^[:space:]]+") %>%  #remove URL's
+                tm_map(cleanToSpace, "(ftp|http|https|www)[^[:space:]]+") %>%  #remove emails
+                tm_map(cleanToSpace, "(#[[:alnum:]_]*)") %>%                   #remove Twitter hashtags
+                tm_map(cleanToSpace, "(@[[:alnum:]_]*)") %>%                   #remove Twitter @user
+                tm_map(content_transformer(removeNumbers)) %>% 
+                tm_map(content_transformer(removePunctuation)) %>% 
+                tm_map(content_transformer(nicerFullStops)) %>%
+                tm_map(content_transformer(stripWhitespace))
+        return(myCorpus)
+}
+
+#####
+# Create n-grams from text
+nGramTokenizer <- function(x,n)
+        unlist(lapply(ngrams(words(x), n), paste, collapse = " "), use.names = FALSE)
+
+#########
+# Build the Document Term Matrices from unigrams to ngrams
+# Returns a list of dtm's
+buildDTM <-function(myCorpus,maxNgram, minWordCount=2, minCharWordLength=1) {
+        print("Building Document Term Matrices")
+        dtm <- vector(mode = "list", length = maxNgram)
+        for(iGram in 1:maxNgram) {
+                print(paste("iGram=",iGram))
+                dtm [[iGram]] <- myCorpus %>% 
+                        DocumentTermMatrix(
+                                control=list(
+                                        tokenize=function(x) nGramTokenizer(x,iGram),
+                                        bounds=list(local=c(minWordCount,Inf)),
+                                        wordLengths=c(minCharWordLength, Inf)
+                                )
+                        )
+        }
+        return(dtm)
+}
+
+#########
+# Build Bag of Words dataframe from DTM
+buildBagOfWords <- function(dtm) {
+        print("Building Bags of Words")
+        maxNgram <- length(dtm)
+        bagOfWords <- vector(mode = "list", length = maxNgram)
+        for(iGram in 1:maxNgram) {
+                wordVector <- as.data.frame(sort(col_sums(dtm[[iGram]]), decreasing = TRUE))
+                if(nrow(wordVector)>0) {
+                        bagOfWords[[iGram]] <-  wordVector
+                        bagOfWords[[iGram]][,2] <- cumsum(bagOfWords[[iGram]][,1])
+                        names(bagOfWords[[iGram]]) <- c("<count>", "cumCount")
+                } else {
+                        bagOfWords[[iGram]] <- NULL   
+                }
+                # Remove rows with names containing a full-stop (>) character
+                # This effectively breaks ngrams at the full-stop.
+                rowsWithPeriods <- which(str_detect(row.names(bagOfWords[[iGram]]),">"))
+                bagOfWords[[iGram]] <- bagOfWords[[iGram]][-rowsWithPeriods,]
+        }
+        # Reorder in descending order
+        for(iGram in 1:maxNgram) {
+                bagOfWords[[iGram]] <- bagOfWords[[iGram]][order(bagOfWords[[iGram]][,"<count>"],decreasing = TRUE),]
+                bagOfWords[[iGram]][,2] <- cumsum(bagOfWords[[iGram]][,1])
+        }
+        return(bagOfWords)
+}
+
+######
+# Plot pareto, wordcloud and cumulative count
+plotBagOfWords<- function (bagOfWords,numBins=40) {
+        print("Plotting Bags of Words")
+        maxNgram <- length(bagOfWords)
+        for(iGram in 1:maxNgram) {
+                # Pareto plot
+                ngrams <- row.names(bagOfWords[[iGram]])
+                count <- bagOfWords[[iGram]][,"<count>"]
+                dfplot <- data.frame(ngram= factor(head(ngrams, numBins),
+                                                  levels=head(row.names(bagOfWords[[iGram]]), numBins)),
+                                     count= head(count, numBins))
+                fig <- ggplot(dfplot, aes(x=ngram, y=count)) + 
+                        geom_bar(stat="identity") + 
+                        xlab(paste0(iGram,"-Grams")) + 
+                        ylab("<count>") +
+                        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                print(fig)
+                
+                if(iGram < 4) suppressWarnings(wordcloud(ngrams, count, max.words = 200, random.order = FALSE,rot.per=0.35, use.r.layout=FALSE,colors=brewer.pal(8, "Dark2")))
+                
+                # Cumulative count plot
+                fig <- ggplot(bagOfWords[[iGram]], aes(x=seq_along(cumCount),y=cumCount)) + 
+                        geom_line() + 
+                        xlab(paste0("Number of ", iGram, "-Grams")) + 
+                        ylab("Cummulative Count") +
+                        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                print(fig)
+        }
+}
+
+#########
+viewBagOfWords <- function(bagOfWords, name="BoW") {
+        print("Viewing Bags of Words")
+        maxNgram <- length(bagOfWords)
+        print(paste("List has",maxNgram,"ngrams"))
+        for(iGram in 1:maxNgram) {
+                View(bagOfWords[[iGram]], paste0(iGram,"-grams", name))
+        }
+}
+
+#########
+findNThresholdBagOfWords <- function(bagOfWords, threshold) {
+        print(paste("Finding Threshold=", threshold, "in Bags of Words"))
+        maxNgram <- length(bagOfWords)
+        
+                
+        nThreshold <- vector(mode="numeric", length=maxNgram)
+        for(iGram in 1:maxNgram) {
+                nRows <- nrow(bagOfWords[[iGram]])
+                totalCount = sum(bagOfWords[[iGram]][nRows,"cumCount"])
+                if(nRows > 0) for(i in 1:nRows) {
+                        if(bagOfWords[[iGram]][i,"cumCount"]/totalCount >= threshold) break
+                }
+                nThreshold[iGram] <- i
+        }
+        return(nThreshold)
+}
+```
+
+## Putting It All Together: Data Exploration
+
+This section illustrates how the functions described above integrate, using a random sample of 60,000 lines from the data. Word-clouds and n-gram frequency Pareto plots are presented for n = 1 through 5.
+
+### UniGram Frequency: Pareto Plot
+
+The following code chunk creates a "Bag of Words" data frame containing only unigrams ("words", n=1) and computes how many unique words represent 50%, 90% and 98% of the words in the sample (note that, for a word to be counted, it needs to appear at least twice in the Corpus):
+
+```{r showStats}
+nSamples <- 60000
+threshold <- 0.98
+
+# Create Bag of Words from Corpus via Document Term Matrix
+myCorpus <- createCorpus(nSamples, forceNew=FALSE) %>% 
+        cleanupCorpus()
+
+# First pass look at the data
+initBagOfWords <- myCorpus %>%       
+        buildDTM(maxNgram=1, minWordCount=2, minCharWordLength=1) %>%
+        buildBagOfWords()
+
+plotBagOfWords(initBagOfWords)
+
+nThreshold <- findNThresholdBagOfWords(initBagOfWords, 0.5)
+print(paste("50% Threshold:", nThreshold))
+
+nThreshold <- findNThresholdBagOfWords(initBagOfWords, 0.9)
+print(paste("90% Threshold:", nThreshold))
+
+nThreshold <- findNThresholdBagOfWords(initBagOfWords, threshold)
+print(paste0(threshold*100,"% Threshold: ", nThreshold))
+```
+
+As expected, the most common words in the sample are the so-called "stopwords". Stopwords are the words in any language that don't add much meaning to a sentence. In many NLP applications, such as those trying to determine "sentiment", stopwords are usually filtered out. However, they need to be included in the analysis for an "auto-complete" application (unless complex grammar rules are added, turning this into a hybrid model.) 
+
+Infrequent words will add to the dimensionality and sparsity of the model (increasing memory requirements), while adding little to its predictive value. Infrequent words comprising less than a pre-determined percentage of the total (2% was chosen in the examples presented in this report) are replaced by a special "unknown word" token (chosen as the "%" character.) Known words serve as the *dictionary* for the *training set* This serves a double purpose: (1) limiting sparsity and dimensionality, as mentioned above; and (2) By applying the same dictionary to the *testing set*, model "perplexity" (a measurement of how well the probability distribution ot the model predicts a sample) can be reduced, allowing our model to "deal with grace" in situations where unknown words are present in the *testing set* but not in the *training set*.
+
+## Bi-grams, Tri-grams, Tetra-grams, Penta-grams, Oh My!!
+
+The following code chunk applies a dictionary to the *training set*, and then proceeds to re-compute the bag of words structure for *n = 1* to *5. Statistics for these n-grams are presented for illustration below.
+
+```{r showStats2, eval=TRUE, echo=FALSE, warning=FALSE, message=FALSE}
+maxNgram <- 5
+minWordCount <- 4
+
+dictionary <- row.names(initBagOfWords[[1]])
+notInDictionary <- dictionary[(nThreshold+1):length(dictionary)]
+dictionary <- dictionary[1:nThreshold]
+
+notInDictionary <- notInDictionary[order(str_length(notInDictionary),decreasing = TRUE)]
+tran <- "%"
+
+# Replace words notInDictionary with unktkn (indicated by %) in Corpus
+
+myCorpus <- tm_map(myCorpus, content_transformer(
+        function(x) textclean::replace_tokens(x, notInDictionary,tran)
+))
+
+rm(dictionary,notInDictionary,initBagOfWords)  # save space
+
+bagOfWords <- myCorpus %>%       
+        buildDTM(maxNgram, minWordCount=minWordCount, minCharWordLength=1) %>% 
+        buildBagOfWords()
+
+plotBagOfWords(bagOfWords)
+```
+
+
+
+**Observations**
+
+* As *n* increases, the cummulative probability distributions become less non-linear.
+* Even after clean-up, some anomalies can be observed after tokenization; for example, sequences of repeated words.
+
+## Plans for a Prediction (Auto-Complete) Algorithm
+
+### Research
+
+The following references have been found useful in planning for the implementation of the prediction algorithm:
+
+* [Chen S, Goodman J (1999) "An Empirical Study of Smoothing Techniques for Language Modeling", *Computer Speech and Language* **13**, 359–394 ](http://www2.denizyuret.com/ref/goodman/chen-goodman-99.pdf)
+
+* [Chen S, Goodman J. (1999) "An Empirical Study of Smoothing Techniques for Language Modeling", TR-10-98 Computer Science Group, Harvard University, Cambridge, Massachusetts](https://dash.harvard.edu/bitstream/handle/1/25104739/tr-10-98.pdf?sequence=1)
+
+ * [Ceccon D (2019) "A simple numerical example for Kneser-Ney Smoothing (NLP)", medium.com](https://medium.com/@dennyc/a-simple-numerical-example-for-kneser-ney-smoothing-nlp-4600addf38b8)
+ 
+ * [Gauthier J (2014) "Kneser-Ney smoothing explained", http://www.foldl.me ](http://www.foldl.me/2014/kneser-ney-smoothing/)
+ 
+ * [Potapenko A "Natural Language Processing", National Research University Higher School of Economics / Coursera](https://www.coursera.org/lecture/language-processing/count-n-gram-language-models-IdJFl)
+
+ * [MacCartney B (2005) "NLP Lunch Tutorial: Smoothing", Stanford University](https://nlp.stanford.edu/~wcmac/papers/20050421-smoothing-tutorial.pdf) 
+ 
+ * [Jurafsky D, Martin J (2020) "Speech and Language Processing", 3rd ed. draft](https://web.stanford.edu/~jurafsky/slp3/)
+
+
+### N-gram storage: "Bag of Words" Structure Expansion
+
+The bag of words implementation above (a data frame of two columns: counts and cummulative counts) is modified as follows: the count for each of the terms in the n-gram data frame are transferred to a new column in the (n-1)-gram data frame. This is best illustrated by an example:
+
+* Suppose that the 5-gram term in the 5-gram data frame is "I do not know why", with a count of "5". 
+* The count of "5" is added to the 4-gram data frame, on the row labeled "I do not know", on a new column labeled "why".
+* Once all the 5-gram term counts are trasfered, the 5-gram data frame (if it is the highest *n*) is deleted.
+* The process is repeated for the 4-grams, 3-grams, all the way down to 1-grams. Once an n-gram count is completed, the original count and cumulative count columns are removed.
+
+This is implemented in the function *populateModel()* presented in the Appendix.
+
+In addition, to implement the "Knesser-Ney" algorithm to calculate probabilities, a "continuation count" is needed, that is, the algorithm requires the count of unique terms preceding every n-gram.  With reference to the example presented above, Knesser-Ney "needs to know" the number of unique terms preceding "do not know why", "not know why", "know why" and "why". This information is computed and stored also in a list of data frames.  Thus, *populateModel()* returns "a list of two lists".
+
+```{r populateExecution, echo=FALSE}
+#########
+populateModel <- function(bagOfWords, threshold) {
+        print(paste("Populating model"))
+        maxNgram <- length(bagOfWords)
+        
+        #Create the continuation count list for Kneser-Ney
+        contCount <- vector(mode="list", length=maxNgram-1)
+        
+        #Populate "follow" back to front
+        for(iGram in maxNgram:2) { 
+                if (nrow(bagOfWords[[iGram]]) > 0) {
+                        #Split the ngrams into (n-1)grams (pregram) and a word
+                        words <- str_split(row.names(bagOfWords[[iGram]]),fixed(" "), simplify=TRUE)
+                        
+                        if(iGram>2) {
+                                if(nrow(words)>1) {
+                                        preGram <- apply(words[,1:(iGram-1)],1,paste,collapse=" ")
+                                        postGram <- apply(words[,2:(iGram)],1,paste,collapse=" ")
+                                } else {
+
+                                        preGram <- paste(words[1,1:(iGram-1)],collapse=" ")
+                                        postGram <- paste(words[1,2:(iGram)],collapse=" ")
+                                }
+                        }
+                        else {
+                                preGram <- words[,1]
+                                postGram <- words[,iGram]
+                        }
+                        
+                        #Populate counts in the (n-1)gram dataframe
+                        numGrams <- length(preGram)
+                        print(paste("Populating iGram=",iGram-1,"with numGrams=",numGrams))
+                        if(numGrams>1) { 
+                                for(i in 1:numGrams) {
+                                        bagOfWords[[iGram-1]][preGram[i],words[i,iGram]] <- bagOfWords[[iGram]][i,"<count>"]
+                                } 
+                        } else {
+                                # Create the new column manually
+                                newColumn <- vector(mode="numeric",length=nrow(bagOfWords[[iGram-1]]))
+                                whichRow <- which(row.names(bagOfWords[[iGram-1]])==preGram)
+                                newColumn[whichRow] <- bagOfWords[[iGram]][1,"<count>"]
+                                bagOfWords[[iGram-1]] <- cbind(bagOfWords[[iGram-1]],newColumn)
+                                names( bagOfWords[[iGram-1]]) <- c("<count>","cumCount",words[1,iGram])
+                        }
+                        
+                        #Create and populate contCount dataframe
+                        ccRowNames <- unique(words[,1])
+                        ccColNames <- unique(postGram)
+                        contCount[[iGram-1]] <- data.frame(matrix(NA,nrow=length(ccRowNames),ncol=length(ccColNames)))
+                        row.names(contCount[[iGram-1]]) <- ccRowNames
+                        colnames(contCount[[iGram-1]]) <- ccColNames
+                        #Populate counts in the (n-1)gram dataframe
+                        for(i in 1:numGrams) {
+                                contCount[[iGram-1]][words[i,1],postGram[i]] <- 1
+                        }
+                        #Collapse the contCount dataframe to just the column sums
+                        contCount[[iGram-1]] <- colSums(contCount[[iGram-1]],na.rm = TRUE)
+                } else {
+                        print ("No high order n-grams, reducing model order")
+                        bagOfWords[[iGram]] <- NULL
+                        maxNgram <- maxNgram - 1
+                }
+        }
+        
+        
+        #Now we can drop the numGrams iGram
+        bagOfWords[[maxNgram]] <- NULL
+        maxNgram <- maxNgram-1
+        
+        # Create new unigram to prepend later on ...
+        df<- data.frame(NULL)
+        uniGram <- rbind(df,bagOfWords[[1]][,1])
+        colnames(uniGram) <- row.names(bagOfWords[[1]])
+        
+        #Remove <count> and cumCount from all
+        for(iGram in 1:maxNgram) {
+                bagOfWords[[iGram]] <- bagOfWords[[iGram]][,-c(1,2),drop=FALSE]
+
+        }
+        
+        #Prepend the new unigram
+        newBagOfWords <- vector(mode = "list", length = maxNgram+1)
+        newBagOfWords[[1]] <- uniGram
+        for(iGram in 1:maxNgram) {
+                newBagOfWords[[iGram+1]] <- bagOfWords[[iGram]]
+        }
+        
+        rm(bagOfWords) # Free space
+        maxNgram <- length(newBagOfWords)
+        
+        #Remove empty lines
+        print("Removing empty lines")
+        for(iGram in 1:maxNgram) {
+                print(paste("iGram=", iGram))
+                #Remove empty lines
+                if(nrow(newBagOfWords[[iGram]])>0) {
+                        indices <- which(rowSums(is.na(newBagOfWords[[iGram]])) == ncol(newBagOfWords[[iGram]]))
+                        rowsDeleted <- length(indices)
+                        print(paste("Removing", rowsDeleted, "empty rows"))
+                        if(rowsDeleted>0) newBagOfWords[[iGram]] <- newBagOfWords[[iGram]][-indices,]
+                }
+        }
+                               
+
+#        bagOfWords <- c(uniGram,bagOfWords)  THIS DOESN'T WORK!!
+        
+        returnList <- vector(mode="list", length=2)
+        returnList[[1]] <- newBagOfWords
+        returnList[[2]] <- contCount
+        
+        return(returnList)
+}
+```
+
+The result of executing *populateModel()* is presented below:
+
+```{r populateRun}
+populate<- populateModel(bagOfWords, threshold)
+        
+        bagOfWords <- populate[[1]]
+        contCount <- populate [[2]]
+        
+        print(bagOfWords[[5]][1:14,1:14])
+        print(bagOfWords[[4]][1:14,1:14])
+        print(contCount[[4]][1:4])
+        print(contCount[[3]][1:4])
+```
+
+Shown above are snapshots of the 5-gram and 4-gram tables.  Note that this implementation sacrifices size in favor of speed. As the data is sparse, there will be many *NA* columns. However, looking of the frequency of a specific n-gram is fast and easy, as R implements very efficiently data frame addressing by column and row name.
+
+The statistical model to be develop will replace these counts by estimated probabilities.  Probabilities will also be estimated for the cells with *NA* values - the fact that no "hits" were scored for these cells does not mean these n-grams don't exist in common language usage. Referring to the output *populateModel()* above, for examples, no "hits" were found for the 5-gram "do not want to see" in the 60,000 lines processed.  However, this is a valid (and common) phrase in the English language. This is called "smoothing", and several methodologies have been proposed to estimate these "missing probabilities". They can be broadly categorized as "back-off models" and "interpolation models". After reviewing the available literature, we plan to implement versions of the Knesser-Ney interpolation model in this project.
+
+If memory size constraints are encountered:
+
+* The model size can be reduced, 4-grams, trigrams, bigrams.
+* The dictionary size can be reduced.
+* Words can be "tokenized" themselves. If less than 65,535 words are used in the dictionary, 16-bit words can be used to encode the entire dictionary.
+
+Thus far, the following model parameters have been identified:
+
+* The number of lines sampled - selected as 60,000 at this time.
+* The order of the model, *n* - selected as 5 at this time.
+* The dictionary threshold, selected as 98%.
+* The filtering parameter - the minimum number of terms that need to be encountered before they are "counted" - selected as 4.
+
+Once probabilities are estimated, the prediction algorithm is as follows.  Given a text to predict, the last *n-1* words will be used to address a row in the n-gram data frame.  If found, then the words with highest probabilities will be returned.  If not found, then the search is limited to *n-2* words looked up in the (n-1)-gram table, and so forth.  In addition interpolation can be applied to consolidated all found probabilities into one probability set.
+
+## Request for Feedback
+
+Any input you'd like to provide after reviewing the materials above is highly appreciated!  Thank you in advance!!
+
+# APPENDIX
+
+## Libraries
+```{r libraries, eval=FALSE}
+library(tidyverse)
+library(tm)
+library(stringr)
+library(slam)
+library(wordcloud)
+library(SemNetCleaner)
+```
+
+
+## Code for Obtaining the Data
+
+```{r downloadData, eval=FALSE}
+#########
+getDataSet <- function() {
+        temp <- tempfile()
+        download.file("https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip",temp)
+        unzip(temp, exdir=getwd())
+        unlink(temp)
+        file.rename("final","textSource")
+}
+```
+
+## Code to Sample the Data and Create the *Training Set* and the *Testing Set*
+
+```{r getData, eval=FALSE}
+#########
+readTextFile <- function(filename, ...){
+        con <- file(filename, "r")
+        text <-readLines(con, encoding = "UTF-8", skipNul = TRUE, ...)
+        close(con)
+        return(iconv(text, "latin1", "ASCII", sub="")) # only ASCII characters, remove emoticons
+}
+
+#########
+writeTextFile <- function(text,filename) {
+        con <- file(filename, "w")
+        writeLines(text, con, sep="\n")
+        close(con)
+}
+
+#########
+getData <- function(sampleDirectory,sampleFile,nSamples,forceNew=FALSE) {
+        
+        nSamplesFile <- file.path(sampleDirectory,paste0("../",sampleFile,".nSamples.RData"))
+
+        
+        #Check if the sample file has been created
+        if(!dir.exists(sampleDirectory)) {
+                dir.create(sampleDirectory)
+        }
+        fullSampleFile <- file.path(sampleDirectory,sampleFile)
+        
+        sampleTestDirectory <- paste0(sampleDirectory,"TEST")
+        if(!dir.exists(sampleTestDirectory)) {
+                dir.create(sampleTestDirectory)
+        }
+        testSampleFile <- file.path(sampleTestDirectory,sampleFile)
+        
+        
+        if(file.exists(nSamplesFile)) {
+                load(nSamplesFile) #reads nSamplesOld
+        } else {
+                nSamplesOld <- 0
+        }
+        
+        if(forceNew || (nSamples != nSamplesOld)) {
+                if(file.exists(fullSampleFile)) file.remove(fullSampleFile)
+        }
+        
+        if(!file.exists(fullSampleFile)) {
+                print("Building new samples file")
+                
+                twitterFile <- "./textSource/en_US/en_US.twitter.txt"
+                blogsFile <- "./textSource/en_US/en_US.blogs.txt"
+                newsFile <- "./textSource/en_US/en_US.news.txt"
+                
+                # Lines, words, bytes
+                print("Lines, words, bytes:")
+                system(paste("wc",twitterFile))
+                system(paste("wc",blogsFile))
+                system(paste("wc",newsFile))
+                
+                # Read all the data in
+                
+                twitterText <- readTextFile(twitterFile,-1)
+                blogsText <- readTextFile(blogsFile,-1)
+                newsText <- readTextFile(newsFile,-1)
+                
+                print("=============Twitter head and tail:")
+                print(head(twitterText,n=2))
+                print(tail(twitterText,n=2))
+                
+                print("=============Blogs head and tail")
+                print(head(blogsText,n=2))
+                print(tail(blogsText,n=2))
+                
+                print("=============News head and tail")
+                print(head(newsText,n=2))
+                print(tail(newsText,n=2))
+                
+                print("Memory use:")
+                print(paste("Twiter text:",format(object.size(twitterText), units = "MB")))
+                print(paste("Blogs text",format(object.size(blogsText), units = "MB")))
+                print(paste("News text",format(object.size(newsText), units = "MB")))
+                
+                # Combine them
+                allText <- c(twitterText, blogsText, newsText)
+                rm(twitterText, blogsText, newsText)
+                print("Length of all text (lines):")
+                print(length(allText))
+                
+                # Sample
+                fullSampleNumber <- round(nSamples*1.2,0) # add 20% for the test set
+                workingText <- sample(allText, fullSampleNumber, replace=FALSE) 
+                rm(allText)
+                # Write it
+                writeTextFile(workingText[1:nSamples],fullSampleFile) # this is the training set
+                writeTextFile(workingText[(nSamples+1):fullSampleNumber],testSampleFile) # this is the test set
+                nSamplesOld <- nSamples
+                save(nSamplesOld, file = nSamplesFile)
+        }
+}
+```
+
+## Code to Read the *Training Set* and Perform Data Clean-up
+
+```{r Corpus, eval=FALSE}
+#########
+# Create the Corpus
+createCorpus <- function(nSamples, forceNew = FALSE) {
+        set.seed(1234)
+        sampleDirectory <- "./textSample"
+        sampleFile <- "textSample.txt"
+        
+        print("Creating Corpus")
+        getData(sampleDirectory,sampleFile, nSamples, forceNew = FALSE)
+        
+        # Reading the Corpus as a directory source appears to be more memory efficient than
+        # reading it as a vector of lines
+        myCorpus <- VCorpus(DirSource(sampleDirectory),
+                            readerControl=list(readPlain, language="en", load=TRUE))
+        return(myCorpus)
+}
+
+#########
+# Transform symbols/punctuations etc. into a space (adapted from: https://rpubs.com/elisb/EDA_nword)
+cleanStuff = function(x) {
+        x <- str_replace_all(x, fixed(" i'm "), " i am ")
+        x <- str_replace_all(x, fixed(" it's "), " it is ")
+        x <- str_replace_all(x, fixed(" can't "), " can not ")
+        x <- str_replace_all(x, fixed("n't "), " not ")
+        x <- str_replace_all(x, fixed(" dont "), " do not ")
+        x <- str_replace_all(x, fixed("'d "), " would ")
+        x <- str_replace_all(x, fixed("'ll "), " will ")
+        x <- str_replace_all(x, fixed("'re "), " are ")
+        x <- str_replace_all(x, fixed("'ve "), " have ")
+        x <- str_replace_all(x, fixed("ca not"), "can not")
+        x <- str_replace_all(x, fixed("pls"), "please")
+        x <- str_replace_all(x, fixed("'s"), " ")
+        x <- str_replace_all(x, fixed(" u "), "you")
+        x <- str_replace_all(x, "[^\x01-\x7F]", " ")  # Replace all non-ASCII characters
+        
+        return(x)
+}
+
+#########
+# Identify end of sentence periods with the character sntcfs
+# Adapted from https://regex101.com/r/lS5tT3/15
+identifyFullStops = function(x) {
+        x <- str_replace_all(x, "[!?.]+(?=$|\\s)", " sntcfs ")
+}
+
+#########
+# Replacee end of sentence tokens "sntcfs" with shorter token ">"
+nicerFullStops = function(x) {
+
+        #It would be great to figure out better way to do this ...
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs\\s+sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, "sntcfs\\s+sntcfs", " > ")   
+        x <- str_replace_all(x, fixed("sntcfs"), " > ")
+}
+
+#########
+# Transform symbols/punctuations etc. into a space (borrowed from: https://rpubs.com/elisb/EDA_nword)
+cleanToSpace <- content_transformer(
+        function(x, pattern) {
+        return (str_replace_all(x, pattern, " "))
+                }
+        )
+
+#########
+# Cleanup the corpus to just "nice" words
+cleanupCorpus <- function(myCorpus) {
+        print("Cleaning ...")
+        # Read profanity list
+        profanityList <- suppressWarnings(readLines("https://gist.githubusercontent.com/ryanlewis/a37739d710ccdb4b406d/raw/3b70dd644cec678ddc43da88d30034add22897ef/google_twunter_lol"))
+        profanityList <- profanityList[order(str_length(profanityList),decreasing=TRUE)]
+        
+        #Cleanup. Don't remove stop words nor stem 
+        myCorpus <- myCorpus %>% 
+                tm_map(content_transformer(tolower)) %>% 
+                tm_map(removeWords, profanityList)  %>% 
+                tm_map(content_transformer(cleanStuff)) %>% 
+                tm_map(removeWords, c("b", "c", "d", "e",
+                                      "f", "g", "h", "j",
+                                      "k", "l", "m", "n", 
+                                      "o", "p", "q", "r", 
+                                      "s", "t", "u", "v", 
+                                      "w", "x", "y", "z", 
+                                      "rt","ya")) %>%      #remove some common abbreviations an random letters
+                tm_map(content_transformer(identifyFullStops)) %>%
+                tm_map(cleanToSpace, "(ftp|http|https|www)[^[:space:]]+") %>%  #remove URL's
+                tm_map(cleanToSpace, "(ftp|http|https|www)[^[:space:]]+") %>%  #remove emails
+                tm_map(cleanToSpace, "(#[[:alnum:]_]*)") %>%                   #remove Twitter hashtags
+                tm_map(cleanToSpace, "(@[[:alnum:]_]*)") %>%                   #remove Twitter @user
+                tm_map(content_transformer(removeNumbers)) %>% 
+                tm_map(content_transformer(removePunctuation)) %>% 
+                tm_map(content_transformer(nicerFullStops)) %>%
+                tm_map(content_transformer(stripWhitespace))
+        return(myCorpus)
+}
+```
+
+## Tokenization code
+
+```{r token, eval=FALSE}
+#####
+# Create n-grams from text
+nGramTokenizer <- function(x,n)
+        unlist(lapply(ngrams(words(x), n), paste, collapse = " "), use.names = FALSE)
+```
+
+## Build Document Term Matrices
+
+```{r, DTM, eval=FALSE}
+#########
+# Build the Document Term Matrices from unigrams to ngrams
+# Returns a list of dtm's
+buildDTM <-function(myCorpus,maxNgram, minWordCount=2, minCharWordLength=1) {
+        print("Building Document Term Matrices")
+        dtm <- vector(mode = "list", length = maxNgram)
+        for(iGram in 1:maxNgram) {
+                print(paste("iGram=",iGram))
+                dtm [[iGram]] <- myCorpus %>% 
+                        DocumentTermMatrix(
+                                control=list(
+                                        tokenize=function(x) nGramTokenizer(x,iGram),
+                                        bounds=list(local=c(minWordCount,Inf)),
+                                        wordLengths=c(minCharWordLength, Inf)
+                                )
+                        )
+        }
+        return(dtm)
+}
+```
+
+## "Bag of Words" Functions
+
+```{r bagOfWords, eval=FALSE}
+#########
+# Build Bag of Words dataframe from DTM
+buildBagOfWords <- function(dtm) {
+        print("Building Bags of Words")
+        maxNgram <- length(dtm)
+        bagOfWords <- vector(mode = "list", length = maxNgram)
+        for(iGram in 1:maxNgram) {
+                wordVector <- as.data.frame(sort(col_sums(dtm[[iGram]]), decreasing = TRUE))
+                if(nrow(wordVector)>0) {
+                        bagOfWords[[iGram]] <-  wordVector
+                        bagOfWords[[iGram]][,2] <- cumsum(bagOfWords[[iGram]][,1])
+                        names(bagOfWords[[iGram]]) <- c("<count>", "cumCount")
+                } else {
+                        bagOfWords[[iGram]] <- NULL   
+                }
+                # Remove rows with names containing a full-stop (>) character
+                # This effectively breaks ngrams at the full-stop.
+                rowsWithPeriods <- which(str_detect(row.names(bagOfWords[[iGram]]),">"))
+                bagOfWords[[iGram]] <- bagOfWords[[iGram]][-rowsWithPeriods,]
+        }
+        # Reorder in descending order
+        for(iGram in 1:maxNgram) {
+                bagOfWords[[iGram]] <- bagOfWords[[iGram]][order(bagOfWords[[iGram]][,"<count>"],decreasing = TRUE),]
+                bagOfWords[[iGram]][,2] <- cumsum(bagOfWords[[iGram]][,1])
+        }
+        return(bagOfWords)
+}
+
+######
+# Plot pareto, wordcloud and cumulative count
+plotBagOfWords<- function (bagOfWords,numBins=40) {
+        print("Plotting Bags of Words")
+        maxNgram <- length(bagOfWords)
+        for(iGram in 1:maxNgram) {
+                # Pareto plot
+                ngrams <- row.names(bagOfWords[[iGram]])
+                count <- bagOfWords[[iGram]][,"<count>"]
+                dfplot <- data.frame(ngram= factor(head(ngrams, numBins),
+                                                  levels=head(row.names(bagOfWords[[iGram]]), numBins)),
+                                     count= head(count, numBins))
+                fig <- ggplot(dfplot, aes(x=ngram, y=count)) + 
+                        geom_bar(stat="identity") + 
+                        xlab(paste0(iGram,"-Grams")) + 
+                        ylab("<count>") +
+                        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                print(fig)
+                
+                if(iGram < 4) suppressWarnings(wordcloud(ngrams, count, max.words = 200, random.order = FALSE,rot.per=0.35, use.r.layout=FALSE,colors=brewer.pal(8, "Dark2")))
+                
+                # Cumulative count plot
+                fig <- ggplot(bagOfWords[[iGram]], aes(x=seq_along(cumCount),y=cumCount)) + 
+                        geom_line() + 
+                        xlab(paste0("Number of ", iGram, "-Grams")) + 
+                        ylab("Cummulative Count") +
+                        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+                print(fig)
+        }
+}
+
+#########
+viewBagOfWords <- function(bagOfWords, name="BoW") {
+        print("Viewing Bags of Words")
+        maxNgram <- length(bagOfWords)
+        print(paste("List has",maxNgram,"ngrams"))
+        for(iGram in 1:maxNgram) {
+                View(bagOfWords[[iGram]], paste0(iGram,"-grams", name))
+        }
+}
+
+#########
+findNThresholdBagOfWords <- function(bagOfWords, threshold) {
+        print(paste("Finding Threshold=", threshold, "in Bags of Words"))
+        maxNgram <- length(bagOfWords)
+        
+                
+        nThreshold <- vector(mode="numeric", length=maxNgram)
+        for(iGram in 1:maxNgram) {
+                nRows <- nrow(bagOfWords[[iGram]])
+                totalCount = sum(bagOfWords[[iGram]][nRows,"cumCount"])
+                if(nRows > 0) for(i in 1:nRows) {
+                        if(bagOfWords[[iGram]][i,"cumCount"]/totalCount >= threshold) break
+                }
+                nThreshold[iGram] <- i
+        }
+        return(nThreshold)
+}
+```
+
+## Populate Bag of Words Function
+
+```{r populate, eval=FALSE}
+#########
+populateModel <- function(bagOfWords, threshold) {
+        print(paste("Populating model"))
+        maxNgram <- length(bagOfWords)
+        
+        #Create the continuation count list for Kneser-Ney
+        contCount <- vector(mode="list", length=maxNgram-1)
+        
+        #Populate "follow" back to front
+        for(iGram in maxNgram:2) { 
+                if (nrow(bagOfWords[[iGram]]) > 0) {
+                        #Split the ngrams into (n-1)grams (pregram) and a word
+                        words <- str_split(row.names(bagOfWords[[iGram]]),fixed(" "), simplify=TRUE)
+                        
+                        if(iGram>2) {
+                                if(nrow(words)>1) {
+                                        preGram <- apply(words[,1:(iGram-1)],1,paste,collapse=" ")
+                                        postGram <- apply(words[,2:(iGram)],1,paste,collapse=" ")
+                                } else {
+
+                                        preGram <- paste(words[1,1:(iGram-1)],collapse=" ")
+                                        postGram <- paste(words[1,2:(iGram)],collapse=" ")
+                                }
+                        }
+                        else {
+                                preGram <- words[,1]
+                                postGram <- words[,iGram]
+                        }
+                        
+                        #Populate counts in the (n-1)gram dataframe
+                        numGrams <- length(preGram)
+                        print(paste("Populating iGram=",iGram-1,"with numGrams=",numGrams))
+                        if(numGrams>1) { 
+                                for(i in 1:numGrams) {
+                                        bagOfWords[[iGram-1]][preGram[i],words[i,iGram]] <- bagOfWords[[iGram]][i,"<count>"]
+                                } 
+                        } else {
+                                # Create the new column manually
+                                newColumn <- vector(mode="numeric",length=nrow(bagOfWords[[iGram-1]]))
+                                whichRow <- which(row.names(bagOfWords[[iGram-1]])==preGram)
+                                newColumn[whichRow] <- bagOfWords[[iGram]][1,"<count>"]
+                                bagOfWords[[iGram-1]] <- cbind(bagOfWords[[iGram-1]],newColumn)
+                                names( bagOfWords[[iGram-1]]) <- c("<count>","cumCount",words[1,iGram])
+                        }
+                        
+                        #Create and populate contCount dataframe
+                        ccRowNames <- unique(words[,1])
+                        ccColNames <- unique(postGram)
+                        contCount[[iGram-1]] <- data.frame(matrix(NA,nrow=length(ccRowNames),ncol=length(ccColNames)))
+                        row.names(contCount[[iGram-1]]) <- ccRowNames
+                        colnames(contCount[[iGram-1]]) <- ccColNames
+                        #Populate counts in the (n-1)gram dataframe
+                        for(i in 1:numGrams) {
+                                contCount[[iGram-1]][words[i,1],postGram[i]] <- 1
+                        }
+                        #Collapse the contCount dataframe to just the column sums
+                        contCount[[iGram-1]] <- colSums(contCount[[iGram-1]],na.rm = TRUE)
+                } else {
+                        print ("No high order n-grams, reducing model order")
+                        bagOfWords[[iGram]] <- NULL
+                        maxNgram <- maxNgram - 1
+                }
+        }
+        
+        
+        #Now we can drop the numGrams iGram
+        bagOfWords[[maxNgram]] <- NULL
+        maxNgram <- maxNgram-1
+        
+        # Create new unigram to prepend later on ...
+        df<- data.frame(NULL)
+        uniGram <- rbind(df,bagOfWords[[1]][,1])
+        colnames(uniGram) <- row.names(bagOfWords[[1]])
+        
+        #Remove <count> and cumCount from all
+        for(iGram in 1:maxNgram) {
+                bagOfWords[[iGram]] <- bagOfWords[[iGram]][,-c(1,2),drop=FALSE]
+
+        }
+        
+        #Prepend the new unigram
+        newBagOfWords <- vector(mode = "list", length = maxNgram+1)
+        newBagOfWords[[1]] <- uniGram
+        for(iGram in 1:maxNgram) {
+                newBagOfWords[[iGram+1]] <- bagOfWords[[iGram]]
+        }
+        
+        rm(bagOfWords) # Free space
+        maxNgram <- length(newBagOfWords)
+        
+        #Remove empty lines
+        print("Removing empty lines")
+        for(iGram in 1:maxNgram) {
+                print(paste("iGram=", iGram))
+                #Remove empty lines
+                if(nrow(newBagOfWords[[iGram]])>0) {
+                        indices <- which(rowSums(is.na(newBagOfWords[[iGram]])) == ncol(newBagOfWords[[iGram]]))
+                        rowsDeleted <- length(indices)
+                        print(paste("Removing", rowsDeleted, "empty rows"))
+                        if(rowsDeleted>0) newBagOfWords[[iGram]] <- newBagOfWords[[iGram]][-indices,]
+                }
+        }
+                               
+
+#        bagOfWords <- c(uniGram,bagOfWords)  THIS DOESN'T WORK!!
+        
+        returnList <- vector(mode="list", length=2)
+        returnList[[1]] <- newBagOfWords
+        returnList[[2]] <- contCount
+        
+        return(returnList)
+}
+```
+
