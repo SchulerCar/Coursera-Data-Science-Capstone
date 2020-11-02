@@ -624,10 +624,7 @@ runTheModel <- function (phrase) {
         }
         
         #print(proc.time() - ptm)       
-        print(rownames(finalResults[1:min(5,nrow(finalResults)),]))
+        returnWords <- rownames(finalResults[1:min(5,nrow(finalResults)),])
         #gc()
-        
+        return(returnWords)
 }
-
-modelFile <- "nGramModel.RData"
-if(file.exists(modelFile)) load(modelFile)
