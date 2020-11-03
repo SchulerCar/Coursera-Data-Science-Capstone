@@ -480,8 +480,8 @@ createTheModel <- function () {
         gc()
         ptm <- proc.time()
         
-        nSamples <- 2500000
-        maxNgram <- 5 # min 2
+        nSamples <- 2000000
+        maxNgram <- 6 # min 2
         threshold <- 0.98  #!! SET BACK TO 0.98
         minWordCount <- 8
         keepStopWords <- TRUE

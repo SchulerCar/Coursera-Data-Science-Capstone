@@ -9,9 +9,9 @@ shinyServer( function(input, output) {
         
         output$returnWords <- renderText({
                 paste(
-                        '<h2>','My guess is:','</h2>',
+                        '<h2>','My best guess is ...','</h2>',
                         '<p style="text-align:center"><i>', input$inputText,'</i> <font size="+3" color="blue">',words()[1],'</font> </p>',
-                        '<h3>', 'Other possibilities:', '</h3>',
+                        '<h3>', '... but other likely possibilities are ...', '</h3>',
                         '<p style="text-align:center"><i>', input$inputText,'</i> <font size="+1" color="red">',words()[2],'</font> </p>',
                         '<p style="text-align:center"><i>', input$inputText,'</i> <font size="+1" color="red">',words()[3],'</font> </p>',
                         '<p style="text-align:center"><i>', input$inputText,'</i> <font size="+1" color="red">',words()[4],'</font> </p>',

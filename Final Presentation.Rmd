@@ -1,0 +1,57 @@
+---
+title: "I will guess the next word!         "
+author: "Carlos Schuler"
+date: "2 November 2020"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+<style>
+.title-slide {
+  background-color: #D3B2FF; /* #EDE0CF; ; #CA9F9D*/}
+</style>
+
+## Natural Language Processing (NLP) Model
+
+*[I Will Guess the Next Word!](https://www.shinyapps.io/admin/#/application/3149794)*  implements a Natural Language Processing (NLP) *n-gram* algorithm to predict (*guess*) the next word in a partial sentence
+
+- The *guess* is based on a probabilistic language model: the probability of the *guess* is conditioned on the *N* previous words.
+
+- Probability tables are generated from a text [corpus](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip). They are adjusted (smoothed) using a variant of the [Knesser-Ney algorithm](http://www2.denizyuret.com/ref/goodman/chen-goodman-99.pdf) and furhter interpolated using [stupid backoff](https://web.stanford.edu/~jurafsky/slp3/3.pdf)
+
+- Words with counts below a pareto threshold are replaced by an *unknown word token*. This allows predicting words for sentences including terms not trained into the model.
+
+
+## Performance
+
+- The model was trained using **2 million sentences** sampled from the SwiftKey corpus provided.  
+
+- Probability tables were constructed for n-grams with N ranging from 1 to 6.
+
+- Training of the model took about two hours. 
+
+- The training data file has a size of 14.2 MB (compressed). Once loaded in memory, the data frame (*"bag of words"*) expands to 258 MB.
+
+- The time required by the app to calculate probabilities to *guess* the next word using the frequency tables is about 0.30s.
+
+
+## Shiny Application and Source Code
+
+- The shiny application is available at
+https://schulercar.shinyapps.io/Coursera-Data-Science-Capstone
+
+- The source code is available from the github repository 
+https://github.com/SchulerCar/Coursera-Data-Science-Capstone
+
+
+## Instructions to Run The Application 
+
+- Access to the application via this [url](https://schulercar.shinyapps.io/Coursera-Data-Science-Capstone)
+- Type the partial sentence for which you want a prediction
+- When you pause typing, the app will *guess* the next word.  It will display the most probable guess, as well as four runners-up
+
+```{r, echo=FALSE, fig.cap="App interface", out.width = '70%'}
+knitr::include_graphics("GNW.png")
+```
